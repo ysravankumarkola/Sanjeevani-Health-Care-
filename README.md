@@ -1,4 +1,4 @@
-# Northstar Care
+# Sanjeevani Healthcare
 
 A full-stack hospital care portal built with React, Vite, Tailwind CSS, Express, MongoDB/Mongoose, JWT, and bcrypt. The project includes public clinician discovery and role-based patient, clinician, and administrator workspaces.
 
