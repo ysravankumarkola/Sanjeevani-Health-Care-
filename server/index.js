@@ -143,7 +143,7 @@ async function sendEmail(to, subject, text) {
     if (process.env.NODE_ENV !== 'production') console.info('Email integration is inactive; configure SMTP_URL to deliver email.')
     return
   }
-  await mailer.sendMail({ from: process.env.EMAIL_FROM || 'Sanjeevani Healthcare <care@localhost>', to, subject, text })
+  await mailer.sendMail({ from: process.env.EMAIL_FROM || 'Sanjeevani Health Care <care@localhost>', to, subject, text })
 }
 const hashToken = (token) => createHash('sha256').update(token).digest('hex')
 
@@ -176,7 +176,7 @@ app.post('/api/auth/register', async (req, res, next) => {
       if (demoMode) Object.assign(profile, fields)
       else await Doctor.findByIdAndUpdate(profile._id, fields)
     }
-    return res.status(201).json({ user: publicUser(user), token: signToken(user), message: input.role === 'doctor' ? 'Your profile is awaiting administrator approval.' : 'Welcome to Sanjeevani Healthcare.' })
+    return res.status(201).json({ user: publicUser(user), token: signToken(user), message: input.role === 'doctor' ? 'Your profile is awaiting administrator approval.' : 'Welcome to Sanjeevani Health Care.' })
   } catch (error) { next(error) }
 })
 
@@ -200,7 +200,7 @@ app.post('/api/auth/forgot-password', async (req, res, next) => {
       if (demoMode) resetTokens.set(idOf(user), { tokenHash, expiresAt })
       else await User.findByIdAndUpdate(idOf(user), { resetTokenHash: tokenHash, resetExpiresAt: expiresAt })
       const resetUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/?resetToken=${token}&email=${encodeURIComponent(user.email)}`
-      await sendEmail(user.email, 'Reset your Sanjeevani Healthcare password', `Use this link within 15 minutes to reset your password:\n\n${resetUrl}`)
+      await sendEmail(user.email, 'Reset your Sanjeevani Health Care password', `Use this link within 15 minutes to reset your password:\n\n${resetUrl}`)
       if (demoMode && !mailer) devResetToken = token
     }
     res.json({ message: 'If that email belongs to an account, password reset instructions have been sent.', ...(devResetToken ? { devResetToken } : {}) })
@@ -521,7 +521,7 @@ async function start() {
   } else {
     await mongoose.connect(process.env.MONGODB_URI)
   }
-  app.listen(port, () => console.log(`Sanjeevani Healthcare API listening on http://localhost:${port}`))
+  app.listen(port, () => console.log(`Sanjeevani Health Care API listening on http://localhost:${port}`))
 }
 
 start().catch((error) => { console.error(error); process.exit(1) })

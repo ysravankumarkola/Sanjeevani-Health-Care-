@@ -1,4 +1,4 @@
-# Sanjeevani Healthcare Workspace Notes
+# Sanjeevani Health Care Hospital Management System Workspace Notes
 
 - Keep frontend API calls under `src/HospitalApp.jsx` aligned with validated routes in `server/index.js`.
 - Add persistent data structures to `server/models.js`; keep development-only fixtures synthetic and ephemeral.
