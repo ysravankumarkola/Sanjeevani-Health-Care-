@@ -5,7 +5,7 @@ import { Activity, ArrowRight, ArrowUpRight, Bell, Building2, CalendarDays, Chec
 import toast, { Toaster } from 'react-hot-toast'
 import './hospital.css'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
+const API = import.meta.env.VITE_API_URL || '/api'
 const portraits = [
   'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=720&q=85',
   'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=720&q=85',
@@ -19,7 +19,8 @@ const demoAccounts = [
 
 async function request(path, { token, ...options } = {}) {
   const isForm = options?.body instanceof FormData
-  const response = await fetch(`${API}${path}`, { ...options, headers: { ...(!isForm ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options?.headers } })
+  const tunnelHeaders = window.location.hostname.endsWith('.loca.lt') ? { 'bypass-tunnel-reminder': 'true' } : {}
+  const response = await fetch(`${API}${path}`, { ...options, headers: { ...(!isForm ? { 'Content-Type': 'application/json' } : {}), ...tunnelHeaders, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options?.headers } })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body.message || 'The request could not be completed.')
   return body
@@ -340,7 +341,8 @@ function Profile({ user, token, onUpdated, onUserUpdate }) {
   }
   async function downloadReport(record, document) {
     try {
-      const response = await fetch(`${API}/records/${record.id || record._id}/documents/${document.id || document._id}`, { headers: { Authorization: `Bearer ${token}` } })
+      const tunnelHeaders = window.location.hostname.endsWith('.loca.lt') ? { 'bypass-tunnel-reminder': 'true' } : {}
+      const response = await fetch(`${API}/records/${record.id || record._id}/documents/${document.id || document._id}`, { headers: { ...tunnelHeaders, Authorization: `Bearer ${token}` } })
       if (!response.ok) throw new Error((await response.json()).message || 'Report download failed.')
       const link = document.createElement('a')
       link.href = URL.createObjectURL(await response.blob())
