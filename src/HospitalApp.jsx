@@ -291,7 +291,32 @@ function DepartmentManager({ departments, token, onUpdated }) {
     return <article className="department-row" key={id}>{editing === id ? <form className="department-edit" onSubmit={(event) => save(event, id)}><input name="name" defaultValue={item.name} required minLength="2" maxLength="100" /><input name="description" defaultValue={item.description} maxLength="500" /><button className="icon-btn accept" title="Save department"><Check size={14} /></button><button type="button" className="icon-btn" title="Cancel editing" onClick={() => setEditing('')}><X size={14} /></button></form> : <><div><b>{item.name}</b><small>{item.description || 'Hospital department'}</small></div><button className="icon-btn" title={`Edit ${item.name}`} onClick={() => setEditing(id)}><Pencil size={14} /></button><button className="icon-btn decline" title={`Remove ${item.name}`} onClick={() => remove(id)}><Trash2 size={14} /></button></>}</article>
   })}</section>
 }
-function RecordsPanel({ records, token }) {
+function RecordsPanel({ records, token, role, onUpdated }) {
+  async function uploadReport(record, file) {
+    const body = new FormData()
+    body.append('report', file)
+    try {
+      await request(`/records/${record.id || record._id}/documents`, { token, method: 'POST', body })
+      toast.success('Medical report uploaded.')
+      await onUpdated()
+    } catch (error) {
+      toast.error(error.message)
+    }
+  }
+  async function downloadReport(record, attachment) {
+    try {
+      const tunnelHeaders = window.location.hostname.endsWith('.loca.lt') ? { 'bypass-tunnel-reminder': 'true' } : {}
+      const response = await fetch(`${API}/records/${record.id || record._id}/documents/${attachment.id || attachment._id}`, { headers: { ...tunnelHeaders, Authorization: `Bearer ${token}` } })
+      if (!response.ok) throw new Error((await response.json()).message || 'Report download failed.')
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(await response.blob())
+      link.download = attachment.name
+      link.click()
+      URL.revokeObjectURL(link.href)
+    } catch (error) {
+      toast.error(error.message)
+    }
+  }
   async function downloadPrescription(record) {
     try {
       const result = await request(`/records/${record.id || record._id}/prescriptions`, { token })
@@ -321,7 +346,7 @@ function RecordsPanel({ records, token }) {
       pdf.save('sanjeevani-health-care-prescription.pdf')
     } catch (error) { toast.error(error.message) }
   }
-  return <section className="panel glass full-panel"><div className="panel-title"><div><small>HEALTH HISTORY</small><h2>Consultation records</h2></div><span className="record-count"><FileHeart size={14} /> {records.length} records</span></div>{records.length ? records.map((record) => <article className="record-row" key={record.id || record._id}><span className="record-icon"><FileHeart size={17} /></span><div><b>{record.diagnosis}</b><small>{dateLabel(record.createdAt?.slice(0, 10), { month: 'long', day: 'numeric', year: 'numeric' })}</small><p>{record.notes || 'No additional notes.'}</p></div><button className="btn btn-outline" onClick={() => downloadPrescription(record)}><Download size={13} /> Prescription</button></article>) : <div className="empty-state"><span><FileHeart size={21} /></span><b>No records yet</b><p>Completed consultations and care notes will be available here.</p></div>}</section>
+  return <section className="panel glass full-panel"><div className="panel-title"><div><small>HEALTH HISTORY</small><h2>Consultation records</h2></div><span className="record-count"><FileHeart size={14} /> {records.length} records</span></div>{records.length ? records.map((record) => <article className="record-row" key={record.id || record._id}><span className="record-icon"><FileHeart size={17} /></span><div><b>{record.diagnosis}</b><small>{dateLabel(record.createdAt?.slice(0, 10), { month: 'long', day: 'numeric', year: 'numeric' })}</small><p>{record.notes || 'No additional notes.'}</p><div className="record-documents">{(record.documents || []).map((attachment) => <button key={attachment.id || attachment._id} onClick={() => downloadReport(record, attachment)}><Download size={11} /> {attachment.name}</button>)}{role === 'doctor' && <label className="upload-report">+ Add report<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadReport(record, file) }} /></label>}</div></div><button className="btn btn-outline" onClick={() => downloadPrescription(record)}><Download size={13} /> Prescription PDF</button></article>) : <div className="empty-state"><span><FileHeart size={21} /></span><b>No records yet</b><p>Completed consultations and care notes will be available here.</p></div>}</section>
 }
 
 function ActivityLog({ token }) {
@@ -333,25 +358,6 @@ function ActivityLog({ token }) {
 function Profile({ user, token, onUpdated, onUserUpdate }) {
   const [saving, setSaving] = useState(false)
   return <section className="panel glass profile-panel"><div className="profile-top"><Avatar name={user.name} image={user.profileImage?.startsWith('/') ? `${API.replace('/api', '')}${user.profileImage}` : user.profileImage} size="large" /><div><small>ACCOUNT DETAILS</small><h2>{user.name}</h2><span>{user.role}</span></div></div><form className="form-stack" onSubmit={async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget)); setSaving(true); try { const result = await request('/profile', { token, method: 'PATCH', body: JSON.stringify(values) }); onUserUpdate(result.user); toast.success('Profile updated.'); await onUpdated() } catch (error) { toast.error(error.message) } finally { setSaving(false) } }}><label>Full name<input name="name" defaultValue={user.name} required /></label><label>Email address<input value={user.email} disabled /></label><label>Phone number<input name="phone" defaultValue={user.phone} /></label><label>Profile picture<input type="file" accept="image/png,image/jpeg,image/webp" onChange={async (event) => { const photo = event.target.files?.[0]; if (!photo) return; const body = new FormData(); body.append('photo', photo); try { const result = await request('/profile/photo', { token, method: 'POST', body }); onUserUpdate(result.user); toast.success('Profile photo updated.') } catch (error) { toast.error(error.message) } }} /></label><button className="btn btn-main">{saving ? 'Saving…' : 'Save changes'} <Check size={14} /></button></form><p className="privacy-hint"><ShieldCheck size={15} /> Profile images use local storage in development. Appointment email requires SMTP configuration.</p></section>
-  async function uploadReport(record, file) {
-    const body = new FormData()
-    body.append('report', file)
-    try { await request(`/records/${record.id || record._id}/documents`, { token, method: 'POST', body }); toast.success('Medical report uploaded.'); await onUpdated() }
-    catch (error) { toast.error(error.message) }
-  }
-  async function downloadReport(record, document) {
-    try {
-      const tunnelHeaders = window.location.hostname.endsWith('.loca.lt') ? { 'bypass-tunnel-reminder': 'true' } : {}
-      const response = await fetch(`${API}/records/${record.id || record._id}/documents/${document.id || document._id}`, { headers: { ...tunnelHeaders, Authorization: `Bearer ${token}` } })
-      if (!response.ok) throw new Error((await response.json()).message || 'Report download failed.')
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(await response.blob())
-      link.download = document.name
-      link.click()
-      URL.revokeObjectURL(link.href)
-    } catch (error) { toast.error(error.message) }
-  }
-  return <section className="panel glass full-panel"><div className="panel-title"><div><small>HEALTH HISTORY</small><h2>Consultation records</h2></div><span className="record-count"><FileHeart size={14} /> {records.length} records</span></div>{records.length ? records.map((record) => <article className="record-row" key={record.id || record._id}><span className="record-icon"><FileHeart size={17} /></span><div><b>{record.diagnosis}</b><small>{dateLabel(record.createdAt?.slice(0, 10), { month: 'long', day: 'numeric', year: 'numeric' })}</small><p>{record.notes || 'No additional notes.'}</p><div className="record-documents">{(record.documents || []).map((document) => <button key={document.id || document._id} onClick={() => downloadReport(record, document)}><Download size={11} /> {document.name}</button>)}{role === 'doctor' && <label className="upload-report">+ Add report<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadReport(record, file) }} /></label>}</div></div><button className="btn btn-outline" onClick={() => downloadPrescription(record)}><Download size={13} /> Prescription PDF</button></article>) : <div className="empty-state"><span><FileHeart size={21} /></span><b>No records yet</b><p>Completed consultations and care notes will be available here.</p></div>}</section>
 }
 
 function DoctorSettings({ token }) {

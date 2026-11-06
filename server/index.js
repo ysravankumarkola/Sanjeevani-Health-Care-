@@ -25,6 +25,7 @@ const jwtSecret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'productio
 const memory = { users: [], doctors: [], patients: [], appointments: [], records: [], prescriptions: [], notifications: [], departments: [], reviews: [], auditLogs: [] }
 const resetTokens = new Map()
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url))
+const clientOrigin = process.env.CLIENT_ORIGIN || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173'
 const profileUploadDirectory = path.join(serverDirectory, 'uploads', 'profile')
 const recordUploadDirectory = path.join(serverDirectory, 'uploads', 'records')
 for (const directory of [profileUploadDirectory, recordUploadDirectory]) if (!existsSync(directory)) mkdirSync(directory, { recursive: true })
@@ -48,7 +49,7 @@ const recordUpload = multer({
 
 if (!jwtSecret) throw new Error('JWT_SECRET is required in production')
 app.use(helmet())
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }))
+app.use(cors({ origin: clientOrigin }))
 app.use(express.json({ limit: '1mb' }))
 app.use('/uploads/profile', express.static(profileUploadDirectory, { fallthrough: false, maxAge: '1d' }))
 app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false }))
@@ -90,7 +91,7 @@ async function findUserByEmail(email, includePassword = false) {
 async function findUserById(id) { return demoMode ? memory.users.find((user) => idOf(user) === id) : User.findById(id) }
 async function userSave(values) {
   if (!demoMode) return User.create(values)
-  const user = { id: crypto.randomUUID(), ...values, createdAt: new Date().toISOString() }
+  const user = { id: randomUUID(), ...values, createdAt: new Date().toISOString() }
   memory.users.push(user)
   return user
 }
@@ -101,12 +102,12 @@ async function profileFor(role, userId) {
 async function createProfile(role, userId) {
   if (role === 'doctor') {
     const defaults = { userId, department: 'General Medicine', specialty: 'General Medicine', qualifications: '', experienceYears: 0, consultationFee: 0, availability: [], approved: false }
-    if (demoMode) { const profile = { id: crypto.randomUUID(), ...defaults }; memory.doctors.push(profile); return profile }
+    if (demoMode) { const profile = { id: randomUUID(), ...defaults }; memory.doctors.push(profile); return profile }
     return Doctor.create(defaults)
   }
   if (role === 'patient') {
     const defaults = { userId, bloodType: '', emergencyContact: '' }
-    if (demoMode) { const profile = { id: crypto.randomUUID(), ...defaults }; memory.patients.push(profile); return profile }
+    if (demoMode) { const profile = { id: randomUUID(), ...defaults }; memory.patients.push(profile); return profile }
     return Patient.create(defaults)
   }
 }
@@ -131,11 +132,11 @@ async function appointmentRows() {
   return Appointment.find().lean()
 }
 async function notify(userId, title, message) {
-  if (demoMode) memory.notifications.unshift({ id: crypto.randomUUID(), userId, title, message, readAt: null, createdAt: new Date().toISOString() })
+  if (demoMode) memory.notifications.unshift({ id: randomUUID(), userId, title, message, readAt: null, createdAt: new Date().toISOString() })
   else await Notification.create({ userId, title, message })
 }
 async function audit(actorId, action, targetType, targetId, details = {}) {
-  if (demoMode) memory.auditLogs.unshift({ id: crypto.randomUUID(), actorId, action, targetType, targetId, details, createdAt: new Date().toISOString() })
+  if (demoMode) memory.auditLogs.unshift({ id: randomUUID(), actorId, action, targetType, targetId, details, createdAt: new Date().toISOString() })
   else await AuditLog.create({ actorId, action, targetType, targetId, details })
 }
 async function sendEmail(to, subject, text) {
@@ -199,7 +200,7 @@ app.post('/api/auth/forgot-password', async (req, res, next) => {
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
       if (demoMode) resetTokens.set(idOf(user), { tokenHash, expiresAt })
       else await User.findByIdAndUpdate(idOf(user), { resetTokenHash: tokenHash, resetExpiresAt: expiresAt })
-      const resetUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/?resetToken=${token}&email=${encodeURIComponent(user.email)}`
+      const resetUrl = `${clientOrigin}/?resetToken=${token}&email=${encodeURIComponent(user.email)}`
       await sendEmail(user.email, 'Reset your Sanjeevani Health Care password', `Use this link within 15 minutes to reset your password:\n\n${resetUrl}`)
       if (demoMode && !mailer) devResetToken = token
     }
@@ -285,7 +286,7 @@ app.get('/api/appointments', auth, async (req, res, next) => {
     let result = rows
     if (req.user.role === 'patient') result = rows.filter((item) => idOf(item.patientId) === idOf(profile))
     if (req.user.role === 'doctor') result = rows.filter((item) => idOf(item.doctorId) === idOf(profile))
-    if (!demoMode) result = await Appointment.find({ ...(req.user.role === 'patient' ? { patientId: profile?._id } : req.user.role === 'doctor' ? { doctorId: profile?._id } : {}) }).populate({ path: 'patientId', populate: { path: 'userId', select: 'name email phone' } }).populate({ path: 'doctorId', populate: { path: 'userId', select: 'name' } }).sort({ date: 1, time: 1 }).lean()
+    if (!demoMode) result = await Appointment.find(req.user.role === 'patient' ? { patientId: profile?._id } : req.user.role === 'doctor' ? { doctorId: profile?._id } : {}).populate({ path: 'patientId', populate: { path: 'userId', select: 'name email phone' } }).populate({ path: 'doctorId', populate: { path: 'userId', select: 'name' } }).sort({ date: 1, time: 1 }).lean()
     res.json(result.map((item) => {
       const patient = demoMode ? memory.patients.find((row) => row.id === idOf(item.patientId)) : item.patientId
       const doctor = demoMode ? memory.doctors.find((row) => row.id === idOf(item.doctorId)) : item.doctorId
@@ -309,7 +310,7 @@ app.post('/api/appointments', auth, allow('patient'), async (req, res, next) => 
     const conflict = rows.some((item) => idOf(item.doctorId) === doctor.id && item.date === input.date && item.time === input.time && ['pending', 'confirmed'].includes(item.status))
     if (conflict) return fail(res, 409, 'That appointment slot has just been taken. Choose another time.')
     const values = { patientId: idOf(patient), doctorId: doctor.id, date: input.date, time: input.time, reason: input.reason || '', status: 'pending' }
-    const appointment = demoMode ? { id: crypto.randomUUID(), ...values, createdAt: new Date().toISOString() } : await Appointment.create(values)
+    const appointment = demoMode ? { id: randomUUID(), ...values, createdAt: new Date().toISOString() } : await Appointment.create(values)
     if (demoMode) memory.appointments.push(appointment)
     else await Promise.all([Appointment.findByIdAndUpdate(appointment._id, { patientId: patient._id, doctorId: doctor.id }), Notification.create({ userId: doctor.userId, title: 'New appointment request', message: `${req.user.name} requested ${input.date} at ${input.time}.` })])
     if (demoMode) await notify(doctor.userId, 'New appointment request', `${req.user.name} requested ${input.date} at ${input.time}.`)
@@ -359,9 +360,9 @@ app.post('/api/records', auth, allow('doctor'), async (req, res, next) => {
     if (!appointment || idOf(appointment.doctorId) !== idOf(doctor) || appointment.status !== 'confirmed') return fail(res, 403, 'A confirmed appointment assigned to you is required.')
     const recordData = { patientId: appointment.patientId, doctorId: idOf(doctor), appointmentId: idOf(appointment), diagnosis: input.diagnosis, notes: input.notes || '', createdAt: new Date().toISOString() }
     let record
-    if (demoMode) { record = { id: crypto.randomUUID(), ...recordData }; memory.records.unshift(record) }
+    if (demoMode) { record = { id: randomUUID(), ...recordData }; memory.records.unshift(record) }
     else { record = await MedicalRecord.create({ ...recordData, patientId: appointment.patientId, doctorId: doctor._id, appointmentId: appointment._id }); if (input.medications.length) await Prescription.create({ recordId: record._id, patientId: appointment.patientId, doctorId: doctor._id, medications: input.medications }) }
-    if (demoMode && input.medications.length) memory.prescriptions.push({ id: crypto.randomUUID(), recordId: record.id, patientId: appointment.patientId, doctorId: idOf(doctor), medications: input.medications })
+    if (demoMode && input.medications.length) memory.prescriptions.push({ id: randomUUID(), recordId: record.id, patientId: appointment.patientId, doctorId: idOf(doctor), medications: input.medications })
     await notify(demoMode ? memory.patients.find((item) => item.id === idOf(appointment.patientId)).userId : (await Patient.findById(appointment.patientId)).userId, 'Medical record added', 'A new consultation record is available in your account.')
     res.status(201).json({ record })
   } catch (error) { next(error) }
@@ -383,7 +384,7 @@ app.post('/api/records/:id/documents', auth, allow('doctor'), recordUpload.singl
     const doctor = await profileFor('doctor', idOf(req.user))
     if (!record) return fail(res, 404, 'Medical record not found.')
     if (idOf(record.doctorId) !== idOf(doctor)) return fail(res, 403, 'You can only add reports to records for your patients.')
-    const document = { _id: randomUUID(), name: path.basename(req.file.originalname).replace(/[^\w.-]/g, '_').slice(0, 120), storageName: req.file.filename, mimeType: req.file.mimetype }
+    const document = { _id: demoMode ? randomUUID() : new mongoose.Types.ObjectId(), name: path.basename(req.file.originalname).replace(/[^\w.-]/g, '_').slice(0, 120), storageName: req.file.filename, mimeType: req.file.mimetype }
     if (demoMode) { record.documents ||= []; record.documents.push(document) }
     else await MedicalRecord.findByIdAndUpdate(req.params.id, { $push: { documents: document } })
     res.status(201).json({ document: { id: document._id, name: document.name, mimeType: document.mimeType } })
@@ -499,15 +500,17 @@ app.post('/api/reviews', auth, allow('patient'), async (req, res, next) => {
     const attended = (await appointmentRows()).some((item) => idOf(item.patientId) === idOf(patient) && idOf(item.doctorId) === input.doctorId && item.status === 'completed')
     if (!attended) return fail(res, 403, 'Feedback is available after a completed appointment.')
     const review = { patientId: idOf(patient), doctorId: input.doctorId, rating: input.rating, comment: input.comment || '' }
-    if (demoMode) memory.reviews.push({ id: crypto.randomUUID(), ...review, createdAt: new Date().toISOString() })
+    if (demoMode) memory.reviews.push({ id: randomUUID(), ...review, createdAt: new Date().toISOString() })
     else await Review.create(review)
     res.status(201).json({ success: true })
   } catch (error) { next(error) }
 })
 
+app.use(express.static(path.resolve(serverDirectory, '../dist')))
+
 app.use((error, _req, res, _next) => {
   if (error instanceof z.ZodError) return res.status(400).json({ message: error.issues[0]?.message || 'Invalid request.' })
-  if (error instanceof multer.MulterError || error?.message?.startsWith('Upload a JPG')) return res.status(400).json({ message: error.message })
+  if (error instanceof multer.MulterError || error?.message?.startsWith('Upload a JPG') || error?.message?.startsWith('Upload a PDF')) return res.status(400).json({ message: error.message })
   if (error?.code === 11000) return res.status(409).json({ message: 'That record already exists.' })
   console.error(error)
   res.status(500).json({ message: 'Something went wrong. Please try again.' })
